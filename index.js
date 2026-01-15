@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import multer from "multer";
-import { exec } from "child_process";
+import { spawn } from "child_process";
 import fs from "fs";
 
 const app = express();
@@ -28,7 +28,6 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
 
   let filter;
 
-  // ✅ FILTRO EM LINHA ÚNICA (OBRIGATÓRIO)
   if (motion === "zoom_in") {
     filter = "scale=iw*1.15:ih*1.15,crop=1920:1080:(in_w-1920)/2:(in_h-1080)/2,fps=30";
   } else if (motion === "zoom_out") {
@@ -37,18 +36,33 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
     filter = "scale=iw*1.1:ih*1.1,crop=1920:1080:(in_w-1920)/2:(in_h-1080)/2,fps=30";
   }
 
-  const cmd =
-    `ffmpeg -y -loop 1 -i ${input} ` +
-    `-vf "${filter}" ` +
-    `-t ${duration} ` +
-    `-pix_fmt yuv420p -movflags +faststart ` +
-    `${output}`;
+  const args = [
+    "-y",
+    "-loop", "1",
+    "-i", input,
+    "-vf", filter,
+    "-t", String(duration),
+    "-pix_fmt", "yuv420p",
+    "-movflags", "+faststart",
+    output
+  ];
 
-  console.log("▶ FFmpeg CMD:", cmd);
+  console.log("▶ FFmpeg args:", args.join(" "));
 
-  exec(cmd, (error, stdout, stderr) => {
-    if (error) {
-      console.error("❌ FFmpeg ERROR:", stderr);
+  const ffmpeg = spawn("ffmpeg", args);
+
+  ffmpeg.stderr.on("data", data => {
+    console.log("FFmpeg:", data.toString());
+  });
+
+  ffmpeg.on("error", err => {
+    console.error("Spawn error:", err);
+    return res.status(500).json({ error: "Erro ao iniciar FFmpeg" });
+  });
+
+  ffmpeg.on("close", code => {
+    if (code !== 0) {
+      console.error("FFmpeg exited with code", code);
       return res.status(500).json({ error: "Erro ao renderizar video" });
     }
 
