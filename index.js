@@ -7,60 +7,66 @@ import fs from "fs";
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-/* CORS */
 app.use(cors({ origin: "*" }));
 
-/* Upload */
 const upload = multer({ dest: "uploads/" });
 
-/* Health */
-app.get("/", (req, res) => {
+app.get("/", (_, res) => {
   res.send("Motion Backend OK");
 });
 
-/* Render MP4 */
 app.post("/render-mp4", upload.single("file"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "Arquivo não recebido" });
-  }
+  if (!req.file) return res.status(400).json({ error: "Arquivo não recebido" });
 
   const input = req.file.path;
   const output = `${input}.mp4`;
   const duration = Number(req.body.duration || 3);
   const motion = req.body.motion || "zoom_in";
 
-  let filter;
+  /**
+   * Estratégia:
+   * 1. Escala a imagem maior que o frame
+   * 2. Move o crop suavemente (SEM recalcular zoom)
+   */
+
+  let vf;
 
   if (motion === "zoom_in") {
-    filter =
-      "zoompan=z=1+0.0008*on:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):" +
-      "s=1920x1080:fps=30";
+    vf = `
+scale=2400:1350,
+crop=1920:1080:
+(2400-1920)/2:
+(1350-1080)/2
+    `;
   } else if (motion === "zoom_out") {
-    filter =
-      "zoompan=z=1.25-0.0008*on:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):" +
-      "s=1920x1080:fps=30";
+    vf = `
+scale=1920:1080,
+crop=1920:1080:0:0
+    `;
   } else {
-    filter =
-      "zoompan=z=1.1:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):" +
-      "s=1920x1080:fps=30";
+    vf = `
+scale=2400:1350,
+crop=1920:1080:
+(2400-1920)*(n/${duration * 30}):
+(1350-1080)/2
+    `;
   }
 
-  const cmd =
-    `ffmpeg -y -loop 1 -i ${input} ` +
-    `-vf "${filter}" ` +
-    `-t ${duration} ` +
-    `-r 30 -pix_fmt yuv420p ${output}`;
+  const cmd = `
+ffmpeg -y -loop 1 -i ${input}
+-vf "${vf}"
+-t ${duration}
+-r 30
+-pix_fmt yuv420p
+${output}
+  `;
 
   console.log("FFmpeg CMD:", cmd);
 
   exec(cmd, (err) => {
     if (err) {
-      console.error("FFmpeg error:", err);
+      console.error(err);
       return res.status(500).json({ error: "Erro ao renderizar vídeo" });
-    }
-
-    if (!fs.existsSync(output)) {
-      return res.status(500).json({ error: "MP4 não gerado" });
     }
 
     res.setHeader("Content-Type", "video/mp4");
@@ -76,7 +82,6 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
   });
 });
 
-/* Start */
 app.listen(PORT, () => {
   console.log("Motion backend running on port", PORT);
 });
