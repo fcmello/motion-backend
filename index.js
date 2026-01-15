@@ -22,62 +22,24 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
 
   const input = req.file.path;
   const output = `${input}.mp4`;
-
   const duration = Number(req.body.duration || 3);
   const motion = req.body.motion || "zoom_in";
 
   let filter;
 
-  /**
-   * 🎥 FILTROS SUAVES (SEM TREMIDA)
-   * Zoom controlado por TEMPO (t)
-   */
   if (motion === "zoom_in") {
-    filter = `
-      scale=1920:1080,
-      zoompan=
-        z='1+0.1*t/${duration}':
-        x='iw/2-(iw/zoom/2)':
-        y='ih/2-(ih/zoom/2)':
-        d=1:
-        s=1920x1080,
-      fps=30
-    `;
+    filter = `scale=1920:1080,zoompan=z='1+0.1*t/${duration}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080,fps=30`;
   } else if (motion === "zoom_out") {
-    filter = `
-      scale=1920:1080,
-      zoompan=
-        z='1.1-0.1*t/${duration}':
-        x='iw/2-(iw/zoom/2)':
-        y='ih/2-(ih/zoom/2)':
-        d=1:
-        s=1920x1080,
-      fps=30
-    `;
+    filter = `scale=1920:1080,zoompan=z='1.1-0.1*t/${duration}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080,fps=30`;
   } else {
-    filter = `
-      scale=1920:1080,
-      zoompan=
-        z='1.05':
-        x='iw/2-(iw/zoom/2)':
-        y='ih/2-(ih/zoom/2)':
-        d=1:
-        s=1920x1080,
-      fps=30
-    `;
+    filter = `scale=1920:1080,zoompan=z='1.05':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1920x1080,fps=30`;
   }
 
-  const cmd = `
-    ffmpeg -y -loop 1 -i ${input}
-    -vf "${filter.replace(/\s+/g, " ")}"
-    -t ${duration}
-    -pix_fmt yuv420p
-    ${output}
-  `;
+  const cmd = `ffmpeg -y -loop 1 -i "${input}" -vf "${filter}" -t ${duration} -pix_fmt yuv420p "${output}"`;
 
-  exec(cmd, (err) => {
+  exec(cmd, (err, stdout, stderr) => {
     if (err) {
-      console.error("FFmpeg error:", err);
+      console.error("FFmpeg ERROR:", stderr);
       return res.status(500).json({ error: "Erro ao renderizar vídeo" });
     }
 
