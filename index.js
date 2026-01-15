@@ -14,41 +14,64 @@ app.use(cors({ origin: "*" }));
 const upload = multer({ dest: "uploads/" });
 
 /* Health check */
-app.get("/", (_, res) => {
+app.get("/", (req, res) => {
   res.send("Motion Backend OK");
 });
 
-/* Render */
+/* Render MP4 */
 app.post("/render-mp4", upload.single("file"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "Arquivo não recebido" });
-  }
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Arquivo não recebido" });
+    }
 
-  const input = req.file.path;
-  const output = `${input}.mp4`;
-  const duration = Number(req.body.duration || 3);
+    const input = req.file.path;
+    const output = `${input}.mp4`;
+    const duration = Number(req.body.duration || 3);
+    const motion = req.body.motion || "zoom_in";
 
-  // 🔒 FFmpeg SIMPLES E SEGURO
- let filter;
+    let filter;
 
-if (req.body.motion === "zoom_in") {
-  filter = "zoompan=z='1+0.0015*on':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:d=1";
-}
-else if (req.body.motion === "zoom_out") {
-  filter = "zoompan=z='1.5-0.0015*on':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:d=1";
-}
-else {
-  filter = "zoompan=z=1.2:s=1920x1080:d=1";
-}
+    if (motion === "zoom_in") {
+      filter =
+        "zoompan=z=1+0.0015*on:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s=1920x1080";
+    } else if (motion === "zoom_out") {
+      filter =
+        "zoompan=z=1.5-0.0015*on:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s=1920x1080";
+    } else {
+      filter =
+        "zoompan=z=1.2:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s=1920x1080";
+    }
 
-const cmd =
-  `ffmpeg -y -loop 1 -i ${input} ` +
-  `-vf "${filter},scale=1920:1080,setsar=1" ` +
-  `-t ${duration} -r 30 -pix_fmt yuv420p ${output}`;
+    const cmd = [
+      "ffmpeg -y",
+      `-loop 1 -i ${input}`,
+      `-vf "${filter}"`,
+      `-t ${duration}`,
+      "-r 30",
+      "-pix_fmt yuv420p",
+      output
+    ].join(" ");
+
+    exec(cmd, (err) => {
+      if (err) {
+        console.error("FFmpeg error:", err);
+        return res.status(500).json({ error: "Erro ao renderizar vídeo" });
+      }
+
+      res.download(output, "motion.mp4", () => {
+        fs.unlinkSync(input);
+        fs.unlinkSync(output);
+      });
     });
-  });
+
+  } catch (e) {
+    console.error("Server error:", e);
+    res.status(500).json({ error: "Erro interno" });
+  }
 });
 
+/* Start */
 app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log("Motion backend running on port", PORT);
 });
