@@ -33,25 +33,54 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
     let filter;
 
     if (motion === "zoom_in") {
-      filter =
-        "zoompan=z=1+0.0015*on:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s=1920x1080";
-    } else if (motion === "zoom_out") {
-      filter =
-        "zoompan=z=1.5-0.0015*on:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s=1920x1080";
-    } else {
-      filter =
-        "zoompan=z=1.2:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s=1920x1080";
+      filter = `
+zoompan=
+z='1+0.15*(t/${duration})':
+x='iw/2-(iw/zoom/2)':
+y='ih/2-(ih/zoom/2)':
+s=1920x1080:
+fps=30
+      `;
+    } 
+    else if (motion === "zoom_out") {
+      filter = `
+zoompan=
+z='1.15-0.15*(t/${duration})':
+x='iw/2-(iw/zoom/2)':
+y='ih/2-(ih/zoom/2)':
+s=1920x1080:
+fps=30
+      `;
+    } 
+    else if (motion === "ken_burns_lr") {
+      filter = `
+zoompan=
+z='1+0.12*(t/${duration})':
+x='(iw-ow)*(t/${duration})':
+y='ih/2-(ih/zoom/2)':
+s=1920x1080:
+fps=30
+      `;
+    } 
+    else {
+      filter = `
+zoompan=
+z='1.1':
+x='iw/2-(iw/zoom/2)':
+y='ih/2-(ih/zoom/2)':
+s=1920x1080:
+fps=30
+      `;
     }
 
-    const cmd = [
-      "ffmpeg -y",
-      `-loop 1 -i ${input}`,
-      `-vf "${filter}"`,
-      `-t ${duration}`,
-      "-r 30",
-      "-pix_fmt yuv420p",
-      output
-    ].join(" ");
+    const cmd = `
+ffmpeg -y -loop 1 -i ${input}
+-vf "${filter}"
+-t ${duration}
+-r 30
+-pix_fmt yuv420p
+${output}
+    `;
 
     exec(cmd, (err) => {
       if (err) {
@@ -71,7 +100,7 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
   }
 });
 
-/* Start */
+/* Start server */
 app.listen(PORT, () => {
   console.log("Motion backend running on port", PORT);
 });
