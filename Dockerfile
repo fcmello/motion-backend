@@ -1,13 +1,20 @@
-FROM node:22-slim
+FROM node:18-slim
 
-RUN apt-get update && apt-get install -y ffmpeg
+# Instala FFmpeg
+RUN apt-get update \
+ && apt-get install -y ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY package.json .
+# Instala dependências
+COPY package.json ./
 RUN npm install
 
+# Copia o restante do código
 COPY . .
 
 EXPOSE 8080
-CMD ["npm", "start"]
+
+# Inicia o servidor
+CMD ["node", "index.js"]
