@@ -4,102 +4,65 @@ import multer from "multer";
 import { exec } from "child_process";
 import fs from "fs";
 import path from "path";
-import { createCanvas, loadImage } from "canvas";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+/* CORS */
 app.use(cors({ origin: "*" }));
 
+/* Upload */
 const upload = multer({ dest: "uploads/" });
 
+/* Health check */
 app.get("/", (_, res) => {
-  res.send("Motion Backend OK (frame-by-frame)");
+  res.send("Motion Backend OK");
 });
 
-/**
- * Render MP4 (Frame-by-Frame)
- */
-app.post("/render-mp4", upload.single("file"), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "Arquivo não recebido" });
-  }
-
-  const duration = Number(req.body.duration || 3);
-  const motion = req.body.motion || "zoom_in";
-  const fps = 30;
-  const totalFrames = duration * fps;
-
-  const inputPath = req.file.path;
-  const workDir = `frames_${Date.now()}`;
-  const outputVideo = `${workDir}.mp4`;
-
-  fs.mkdirSync(workDir);
-
+/* Render MP4 */
+app.post("/render-mp4", upload.single("file"), (req, res) => {
   try {
-    const img = await loadImage(inputPath);
+    if (!req.file) {
+      return res.status(400).json({ error: "Arquivo não recebido" });
+    }
 
-    const W = 1920;
-    const H = 1080;
+    const input = req.file.path;
+    const output = `${input}.mp4`;
 
-    const canvas = createCanvas(W, H);
-    const ctx = canvas.getContext("2d");
+    const duration = Number(req.body.duration || 3);
+    const motion = req.body.motion || "zoom_in";
 
-    const baseScale = Math.max(W / img.width, H / img.height);
-    const zoomStart = motion === "zoom_out" ? 1.15 : 1.0;
-    const zoomEnd = motion === "zoom_out" ? 1.0 : 1.15;
+    let filter;
 
-    for (let i = 0; i < totalFrames; i++) {
-      const t = i / (totalFrames - 1);
-      const ease = t < 0.5
-        ? 2 * t * t
-        : 1 - Math.pow(-2 * t + 2, 2) / 2;
-
-      const zoom = zoomStart + (zoomEnd - zoomStart) * ease;
-      const scale = baseScale * zoom;
-
-      const drawW = img.width * scale;
-      const drawH = img.height * scale;
-
-      const x = (W - drawW) / 2;
-      const y = (H - drawH) / 2;
-
-      ctx.clearRect(0, 0, W, H);
-      ctx.drawImage(img, x, y, drawW, drawH);
-
-      const framePath = path.join(
-        workDir,
-        `frame_${String(i).padStart(4, "0")}.png`
-      );
-
-      fs.writeFileSync(framePath, canvas.toBuffer("image/png"));
+    // 🎥 MOVIMENTOS SUAVES (SEM TREMIDA)
+    if (motion === "zoom_in") {
+      filter =
+        "zoompan=z='1+0.0008*on':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080";
+    } else if (motion === "zoom_out") {
+      filter =
+        "zoompan=z='1.15-0.0008*on':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080";
+    } else {
+      filter =
+        "zoompan=z='1.1':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080";
     }
 
     const cmd = `
-ffmpeg -y -framerate ${fps} -i ${workDir}/frame_%04d.png \
--c:v libx264 -pix_fmt yuv420p -movflags +faststart \
-${outputVideo}
+      ffmpeg -y -loop 1 -i ${input} \
+      -vf "${filter}" \
+      -t ${duration} -r 30 -pix_fmt yuv420p ${output}
     `;
 
     exec(cmd, (err) => {
       if (err) {
         console.error("FFmpeg error:", err);
-        return res.status(500).json({ error: "Erro ao montar vídeo" });
+        return res.status(500).json({ error: "Erro ao renderizar vídeo" });
       }
 
-      res.setHeader("Content-Type", "video/mp4");
-      res.setHeader("Content-Disposition", "attachment; filename=motion.mp4");
-
-      const stream = fs.createReadStream(outputVideo);
-      stream.pipe(res);
-
-      stream.on("close", () => {
-        fs.rmSync(workDir, { recursive: true, force: true });
-        fs.unlinkSync(outputVideo);
-        fs.unlinkSync(inputPath);
+      res.download(output, () => {
+        fs.unlinkSync(input);
+        fs.unlinkSync(output);
       });
     });
-
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Erro interno" });
@@ -107,5 +70,5 @@ ${outputVideo}
 });
 
 app.listen(PORT, () => {
-  console.log("Motion backend (frame-by-frame) running on", PORT);
+  console.log(`🚀 Motion backend running on port ${PORT}`);
 });
