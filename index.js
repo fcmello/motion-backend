@@ -13,7 +13,7 @@ app.use(cors({ origin: "*" }));
 /* Upload */
 const upload = multer({ dest: "uploads/" });
 
-/* Health check */
+/* Health */
 app.get("/", (req, res) => {
   res.send("Motion Backend OK");
 });
@@ -33,17 +33,16 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
 
   if (motion === "zoom_in") {
     filter =
-      "zoompan=z='1+0.15*(t/" +
-      duration +
-      ")':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=30";
+      "zoompan=z=1+0.0008*on:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):" +
+      "s=1920x1080:fps=30";
   } else if (motion === "zoom_out") {
     filter =
-      "zoompan=z='1.15-0.15*(t/" +
-      duration +
-      ")':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=30";
+      "zoompan=z=1.25-0.0008*on:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):" +
+      "s=1920x1080:fps=30";
   } else {
     filter =
-      "zoompan=z='1.1':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=30";
+      "zoompan=z=1.1:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):" +
+      "s=1920x1080:fps=30";
   }
 
   const cmd =
@@ -52,7 +51,7 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
     `-t ${duration} ` +
     `-r 30 -pix_fmt yuv420p ${output}`;
 
-  console.log("Running FFmpeg:", cmd);
+  console.log("FFmpeg CMD:", cmd);
 
   exec(cmd, (err) => {
     if (err) {
@@ -61,7 +60,7 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
     }
 
     if (!fs.existsSync(output)) {
-      return res.status(500).json({ error: "Arquivo MP4 não gerado" });
+      return res.status(500).json({ error: "MP4 não gerado" });
     }
 
     res.setHeader("Content-Type", "video/mp4");
