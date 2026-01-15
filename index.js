@@ -64,32 +64,21 @@ app.post("/render-mp4", upload.single("file"), async (req, res) => {
        FFmpeg
     ======================= */
     const cmd = `
-      ffmpeg -y -loop 1 -i "${input}" \
-      -vf "${filter},scale=1920:1080,setsar=1" \
-      -t ${duration} \
-      -r 30 \
-      -pix_fmt yuv420p \
-      -movflags +faststart \
-      "${output}"
-    `;
-
-    exec(cmd, (err) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).json({ error: "Erro no FFmpeg" });
-      }
-
-      res.download(output, () => {
-        fs.unlinkSync(input);
-        fs.unlinkSync(output);
-      });
-    });
-
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Erro interno" });
-  }
-});
+ffmpeg -y -loop 1 -i "${input}" \
+-vf "
+scale=1920:1080:force_original_aspect_ratio=increase,
+crop=1920:1080,
+zoompan=z='min(zoom+0.0015,1.5)':
+x='iw/2-(iw/zoom/2)':
+y='ih/2-(ih/zoom/2)':
+d=1:s=1920x1080
+" \
+-t ${duration} \
+-r 30 \
+-pix_fmt yuv420p \
+-movflags +faststart \
+"${output}"
+`;
 
 /* =======================
    HEALTH CHECK
