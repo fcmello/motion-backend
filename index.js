@@ -3,6 +3,8 @@ import cors from "cors";
 import multer from "multer";
 import { exec } from "child_process";
 import fs from "fs";
+import path from "path";
+import { createCanvas, loadImage } from "canvas";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -11,73 +13,99 @@ app.use(cors({ origin: "*" }));
 
 const upload = multer({ dest: "uploads/" });
 
-app.get("/", (req, res) => {
-  res.send("Motion Backend OK");
+app.get("/", (_, res) => {
+  res.send("Motion Backend OK (frame-by-frame)");
 });
 
-app.post("/render-mp4", upload.single("file"), (req, res) => {
+/**
+ * Render MP4 (Frame-by-Frame)
+ */
+app.post("/render-mp4", upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "Arquivo não recebido" });
   }
 
-  const input = req.file.path;
-  const output = `${input}.mp4`;
   const duration = Number(req.body.duration || 3);
   const motion = req.body.motion || "zoom_in";
+  const fps = 30;
+  const totalFrames = duration * fps;
 
-  let filter;
+  const inputPath = req.file.path;
+  const workDir = `frames_${Date.now()}`;
+  const outputVideo = `${workDir}.mp4`;
 
-  if (motion === "zoom_in") {
-    filter =
-      "zoompan=z=1+0.0003*on:" +
-      "x=iw/2-(iw/zoom/2):" +
-      "y=ih/2-(ih/zoom/2):" +
-      "s=1920x1080:fps=30:d=1";
-  } else if (motion === "zoom_out") {
-    filter =
-      "zoompan=z=1.05-0.0003*on:" +
-      "x=iw/2-(iw/zoom/2):" +
-      "y=ih/2-(ih/zoom/2):" +
-      "s=1920x1080:fps=30:d=1";
-  } else {
-    filter =
-      "zoompan=z=1.02:" +
-      "x=iw/2-(iw/zoom/2):" +
-      "y=ih/2-(ih/zoom/2):" +
-      "s=1920x1080:fps=30:d=1";
-  }
+  fs.mkdirSync(workDir);
 
-  const cmd =
-    `ffmpeg -y -loop 1 -i ${input} ` +
-    `-vf "${filter}" ` +
-    `-t ${duration} ` +
-    `-r 30 -pix_fmt yuv420p ${output}`;
+  try {
+    const img = await loadImage(inputPath);
 
-  console.log("FFmpeg CMD:", cmd);
+    const W = 1920;
+    const H = 1080;
 
-  exec(cmd, (err) => {
-    if (err) {
-      console.error("FFmpeg error:", err);
-      return res.status(500).json({ error: "Erro ao renderizar vídeo" });
+    const canvas = createCanvas(W, H);
+    const ctx = canvas.getContext("2d");
+
+    const baseScale = Math.max(W / img.width, H / img.height);
+    const zoomStart = motion === "zoom_out" ? 1.15 : 1.0;
+    const zoomEnd = motion === "zoom_out" ? 1.0 : 1.15;
+
+    for (let i = 0; i < totalFrames; i++) {
+      const t = i / (totalFrames - 1);
+      const ease = t < 0.5
+        ? 2 * t * t
+        : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+      const zoom = zoomStart + (zoomEnd - zoomStart) * ease;
+      const scale = baseScale * zoom;
+
+      const drawW = img.width * scale;
+      const drawH = img.height * scale;
+
+      const x = (W - drawW) / 2;
+      const y = (H - drawH) / 2;
+
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(img, x, y, drawW, drawH);
+
+      const framePath = path.join(
+        workDir,
+        `frame_${String(i).padStart(4, "0")}.png`
+      );
+
+      fs.writeFileSync(framePath, canvas.toBuffer("image/png"));
     }
 
-    if (!fs.existsSync(output)) {
-      return res.status(500).json({ error: "MP4 não gerado" });
-    }
+    const cmd = `
+ffmpeg -y -framerate ${fps} -i ${workDir}/frame_%04d.png \
+-c:v libx264 -pix_fmt yuv420p -movflags +faststart \
+${outputVideo}
+    `;
 
-    res.setHeader("Content-Type", "video/mp4");
-    res.setHeader("Content-Disposition", "attachment; filename=motion.mp4");
+    exec(cmd, (err) => {
+      if (err) {
+        console.error("FFmpeg error:", err);
+        return res.status(500).json({ error: "Erro ao montar vídeo" });
+      }
 
-    const stream = fs.createReadStream(output);
-    stream.pipe(res);
+      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Content-Disposition", "attachment; filename=motion.mp4");
 
-    stream.on("close", () => {
-      fs.unlinkSync(input);
-      fs.unlinkSync(output);
+      const stream = fs.createReadStream(outputVideo);
+      stream.pipe(res);
+
+      stream.on("close", () => {
+        fs.rmSync(workDir, { recursive: true, force: true });
+        fs.unlinkSync(outputVideo);
+        fs.unlinkSync(inputPath);
+      });
     });
-  });
+
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Erro interno" });
+  }
 });
 
 app.listen(PORT, () => {
-  console.log("Motion backend running on port", PORT);
+  console.log("Motion backend (frame-by-frame) running on", PORT);
 });
