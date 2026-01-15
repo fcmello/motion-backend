@@ -11,62 +11,58 @@ app.use(cors({ origin: "*" }));
 
 const upload = multer({ dest: "uploads/" });
 
-app.get("/", (_, res) => {
+app.get("/", (req, res) => {
   res.send("Motion Backend OK");
 });
 
 app.post("/render-mp4", upload.single("file"), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "Arquivo não recebido" });
+  if (!req.file) {
+    return res.status(400).json({ error: "Arquivo não recebido" });
+  }
 
   const input = req.file.path;
   const output = `${input}.mp4`;
   const duration = Number(req.body.duration || 3);
   const motion = req.body.motion || "zoom_in";
 
-  /**
-   * Estratégia:
-   * 1. Escala a imagem maior que o frame
-   * 2. Move o crop suavemente (SEM recalcular zoom)
-   */
-
-  let vf;
+  let filter;
 
   if (motion === "zoom_in") {
-    vf = `
-scale=2400:1350,
-crop=1920:1080:
-(2400-1920)/2:
-(1350-1080)/2
-    `;
+    filter =
+      "zoompan=z=1+0.0003*on:" +
+      "x=iw/2-(iw/zoom/2):" +
+      "y=ih/2-(ih/zoom/2):" +
+      "s=1920x1080:fps=30:d=1";
   } else if (motion === "zoom_out") {
-    vf = `
-scale=1920:1080,
-crop=1920:1080:0:0
-    `;
+    filter =
+      "zoompan=z=1.05-0.0003*on:" +
+      "x=iw/2-(iw/zoom/2):" +
+      "y=ih/2-(ih/zoom/2):" +
+      "s=1920x1080:fps=30:d=1";
   } else {
-    vf = `
-scale=2400:1350,
-crop=1920:1080:
-(2400-1920)*(n/${duration * 30}):
-(1350-1080)/2
-    `;
+    filter =
+      "zoompan=z=1.02:" +
+      "x=iw/2-(iw/zoom/2):" +
+      "y=ih/2-(ih/zoom/2):" +
+      "s=1920x1080:fps=30:d=1";
   }
 
-  const cmd = `
-ffmpeg -y -loop 1 -i ${input}
--vf "${vf}"
--t ${duration}
--r 30
--pix_fmt yuv420p
-${output}
-  `;
+  const cmd =
+    `ffmpeg -y -loop 1 -i ${input} ` +
+    `-vf "${filter}" ` +
+    `-t ${duration} ` +
+    `-r 30 -pix_fmt yuv420p ${output}`;
 
   console.log("FFmpeg CMD:", cmd);
 
   exec(cmd, (err) => {
     if (err) {
-      console.error(err);
+      console.error("FFmpeg error:", err);
       return res.status(500).json({ error: "Erro ao renderizar vídeo" });
+    }
+
+    if (!fs.existsSync(output)) {
+      return res.status(500).json({ error: "MP4 não gerado" });
     }
 
     res.setHeader("Content-Type", "video/mp4");
