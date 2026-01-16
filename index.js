@@ -13,7 +13,6 @@ if (!fs.existsSync("uploads")) {
 }
 
 app.use(cors({ origin: "*" }));
-
 const upload = multer({ dest: "uploads/" });
 
 app.get("/", (_, res) => {
@@ -28,28 +27,31 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
   const input = req.file.path;
   const output = path.join("uploads", `${req.file.filename}.mp4`);
 
-  const duration = Number(req.body.duration || 3);
+  const duration = Number(req.body.duration || 5);
   const motion = req.body.motion || "zoom_in";
 
-  let zoomExpr;
+  // 🔑 KEN BURNS REAL (SEM ZOOMPAN)
+  let filter;
 
   if (motion === "zoom_in") {
-    zoomExpr = "1+0.0015*on";
-  } else if (motion === "zoom_out") {
-    zoomExpr = "1.15-0.0015*on";
+    filter =
+      "scale=iw*1.15:ih*1.15," +
+      "crop=1920:1080:" +
+      "x='(in_w-1920)/2':" +
+      "y='(in_h-1080)/2'";
+  } else if (motion === "pan_left") {
+    filter =
+      "scale=iw*1.15:ih*1.15," +
+      "crop=1920:1080:" +
+      "x='(in_w-1920)*(t/" + duration + ")':" +
+      "y='(in_h-1080)/2'";
   } else {
-    zoomExpr = "1.08";
+    filter =
+      "scale=iw*1.1:ih*1.1," +
+      "crop=1920:1080:" +
+      "x='(in_w-1920)/2':" +
+      "y='(in_h-1080)/2'";
   }
-
-  // 🔑 FILTRO SEGURO (NÃO QUEBRA COM IMAGENS PEQUENAS)
-  const filter =
-    `zoompan=` +
-    `z='${zoomExpr}':` +
-    `x='iw/2-(iw/zoom/2)':` +
-    `y='ih/2-(ih/zoom/2)':` +
-    `d=1:` +
-    `s=1920x1080:` +
-    `fps=30`;
 
   const args = [
     "-y",
@@ -57,22 +59,20 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
     "-i", input,
     "-vf", filter,
     "-t", String(duration),
+    "-r", "30",
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
     output
   ];
 
-  console.log("▶ FFmpeg:", "/usr/bin/ffmpeg", args.join(" "));
+  console.log("▶ FFmpeg:", args.join(" "));
 
   const ffmpeg = spawn("/usr/bin/ffmpeg", args);
 
-  ffmpeg.stderr.on("data", d => {
-    console.log("FFmpeg:", d.toString());
-  });
+  ffmpeg.stderr.on("data", d => console.log(d.toString()));
 
   ffmpeg.on("close", code => {
     if (code !== 0) {
-      console.error("FFmpeg exited with code", code);
       return res.status(500).json({ error: "Erro ao renderizar video" });
     }
 
