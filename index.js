@@ -17,10 +17,6 @@ app.get("/", (_, res) => {
   res.send("Motion Backend OK");
 });
 
-/**
- * 🔥 TESTE FINAL: imagem → MP4 ESTÁTICO
- * (sem movimento, sem erro, sem 500)
- */
 app.post("/render-mp4", upload.single("file"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "Arquivo não recebido" });
@@ -28,15 +24,29 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
 
   const input = req.file.path;
   const output = path.join("uploads", `${req.file.filename}.mp4`);
-  const duration = Number(req.body.duration || 3);
+  const duration = Number(req.body.duration || 5);
+
+  /**
+   * ✅ MOVIMENTO SEGURO (micro zoom)
+   * - não usa t
+   * - não usa crop
+   * - não quebra
+   */
+  const filter =
+    "zoompan=" +
+    "z='1+0.0004*on':" +
+    "x='iw/2-(iw/zoom/2)':" +
+    "y='ih/2-(ih/zoom/2)':" +
+    "d=1:" +
+    "s=1920x1080:" +
+    "fps=30";
 
   const args = [
     "-y",
     "-loop", "1",
     "-i", input,
-    "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+    "-vf", filter,
     "-t", String(duration),
-    "-r", "30",
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
     output
@@ -54,7 +64,7 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
       return res.status(500).json({ error: "Erro ao renderizar video" });
     }
 
-    res.download(output, "test.mp4", () => {
+    res.download(output, "motion.mp4", () => {
       fs.unlinkSync(input);
       fs.unlinkSync(output);
     });
