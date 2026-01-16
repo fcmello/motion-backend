@@ -8,7 +8,6 @@ import path from "path";
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// 🔒 garante uploads/
 if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads");
 }
@@ -17,33 +16,10 @@ app.use(cors({ origin: "*" }));
 
 const upload = multer({ dest: "uploads/" });
 
-app.get("/", (req, res) => {
+app.get("/", (_, res) => {
   res.send("Motion Backend OK");
 });
 
-/**
- * 🔍 TESTE 1 — FFmpeg puro (SEM UPLOAD)
- * Acesse: /test-ffmpeg
- */
-app.get("/test-ffmpeg", (req, res) => {
-  const ffmpeg = spawn("/usr/bin/ffmpeg", ["-version"]);
-
-  let output = "";
-
-  ffmpeg.stdout.on("data", d => output += d.toString());
-  ffmpeg.stderr.on("data", d => output += d.toString());
-
-  ffmpeg.on("close", code => {
-    res.json({
-      exitCode: code,
-      output
-    });
-  });
-});
-
-/**
- * 🎬 RENDER MP4 REAL
- */
 app.post("/render-mp4", upload.single("file"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "Arquivo não recebido" });
@@ -55,8 +31,25 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
   const duration = Number(req.body.duration || 3);
   const motion = req.body.motion || "zoom_in";
 
-  let filter =
-    "scale=iw*1.15:ih*1.15,crop=1920:1080:(in_w-1920)/2:(in_h-1080)/2,fps=30";
+  let zoomExpr;
+
+  if (motion === "zoom_in") {
+    zoomExpr = "1+0.0015*on";
+  } else if (motion === "zoom_out") {
+    zoomExpr = "1.15-0.0015*on";
+  } else {
+    zoomExpr = "1.08";
+  }
+
+  // 🔑 FILTRO SEGURO (NÃO QUEBRA COM IMAGENS PEQUENAS)
+  const filter =
+    `zoompan=` +
+    `z='${zoomExpr}':` +
+    `x='iw/2-(iw/zoom/2)':` +
+    `y='ih/2-(ih/zoom/2)':` +
+    `d=1:` +
+    `s=1920x1080:` +
+    `fps=30`;
 
   const args = [
     "-y",
@@ -69,17 +62,12 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
     output
   ];
 
-  console.log("▶ FFmpeg CMD:", "/usr/bin/ffmpeg", args.join(" "));
+  console.log("▶ FFmpeg:", "/usr/bin/ffmpeg", args.join(" "));
 
   const ffmpeg = spawn("/usr/bin/ffmpeg", args);
 
   ffmpeg.stderr.on("data", d => {
     console.log("FFmpeg:", d.toString());
-  });
-
-  ffmpeg.on("error", err => {
-    console.error("Spawn error:", err);
-    return res.status(500).json({ error: "Erro ao iniciar FFmpeg" });
   });
 
   ffmpeg.on("close", code => {
