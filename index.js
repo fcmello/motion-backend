@@ -8,9 +8,7 @@ import path from "path";
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-if (!fs.existsSync("uploads")) {
-  fs.mkdirSync("uploads");
-}
+if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
 app.use(cors({ origin: "*" }));
 const upload = multer({ dest: "uploads/" });
@@ -19,6 +17,10 @@ app.get("/", (_, res) => {
   res.send("Motion Backend OK");
 });
 
+/**
+ * 🔥 TESTE FINAL: imagem → MP4 ESTÁTICO
+ * (sem movimento, sem erro, sem 500)
+ */
 app.post("/render-mp4", upload.single("file"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "Arquivo não recebido" });
@@ -26,30 +28,21 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
 
   const input = req.file.path;
   const output = path.join("uploads", `${req.file.filename}.mp4`);
-  const duration = Number(req.body.duration || 5);
-
-  /**
-   * 🎥 PAN SUAVE (SEM ZOOMPAN, SEM JITTER, SEM 500)
-   * Move da esquerda para a direita lentamente
-   */
-  const filter =
-    "scale=2200:1240:force_original_aspect_ratio=cover," +
-    "pad=2200:1240:(ow-iw)/2:(oh-ih)/2," +
-    `crop=1920:1080:x='(2200-1920)*(t/${duration})':y='(1240-1080)/2',` +
-    "fps=30";
+  const duration = Number(req.body.duration || 3);
 
   const args = [
     "-y",
     "-loop", "1",
     "-i", input,
-    "-vf", filter,
+    "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
     "-t", String(duration),
+    "-r", "30",
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
     output
   ];
 
-  console.log("▶ FFmpeg args:", args.join(" "));
+  console.log("FFmpeg:", args.join(" "));
 
   const ffmpeg = spawn("/usr/bin/ffmpeg", args);
 
@@ -61,7 +54,7 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
       return res.status(500).json({ error: "Erro ao renderizar video" });
     }
 
-    res.download(output, "motion.mp4", () => {
+    res.download(output, "test.mp4", () => {
       fs.unlinkSync(input);
       fs.unlinkSync(output);
     });
