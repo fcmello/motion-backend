@@ -26,32 +26,18 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
 
   const input = req.file.path;
   const output = path.join("uploads", `${req.file.filename}.mp4`);
-
   const duration = Number(req.body.duration || 5);
-  const motion = req.body.motion || "zoom_in";
 
-  // 🔑 KEN BURNS REAL (SEM ZOOMPAN)
-  let filter;
-
-  if (motion === "zoom_in") {
-    filter =
-      "scale=iw*1.15:ih*1.15," +
-      "crop=1920:1080:" +
-      "x='(in_w-1920)/2':" +
-      "y='(in_h-1080)/2'";
-  } else if (motion === "pan_left") {
-    filter =
-      "scale=iw*1.15:ih*1.15," +
-      "crop=1920:1080:" +
-      "x='(in_w-1920)*(t/" + duration + ")':" +
-      "y='(in_h-1080)/2'";
-  } else {
-    filter =
-      "scale=iw*1.1:ih*1.1," +
-      "crop=1920:1080:" +
-      "x='(in_w-1920)/2':" +
-      "y='(in_h-1080)/2'";
-  }
+  /**
+   * 🔑 FILTRO PROFISSIONAL
+   * - nunca quebra
+   * - sem crop
+   * - sem jitter
+   */
+  const filter =
+    "scale=1920:1080:force_original_aspect_ratio=decrease," +
+    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2," +
+    "zoompan=z='1.08':d=1:fps=30";
 
   const args = [
     "-y",
@@ -59,13 +45,12 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
     "-i", input,
     "-vf", filter,
     "-t", String(duration),
-    "-r", "30",
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
     output
   ];
 
-  console.log("▶ FFmpeg:", args.join(" "));
+  console.log("▶ FFmpeg args:", args.join(" "));
 
   const ffmpeg = spawn("/usr/bin/ffmpeg", args);
 
@@ -73,6 +58,7 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
 
   ffmpeg.on("close", code => {
     if (code !== 0) {
+      console.error("FFmpeg exited with code", code);
       return res.status(500).json({ error: "Erro ao renderizar video" });
     }
 
