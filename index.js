@@ -29,15 +29,14 @@ app.post("/render-mp4", upload.single("file"), (req, res) => {
   const duration = Number(req.body.duration || 5);
 
   /**
-   * 🔑 FILTRO PROFISSIONAL
-   * - nunca quebra
-   * - sem crop
-   * - sem jitter
+   * 🎥 PAN SUAVE (SEM ZOOMPAN, SEM JITTER, SEM 500)
+   * Move da esquerda para a direita lentamente
    */
   const filter =
-    "scale=1920:1080:force_original_aspect_ratio=decrease," +
-    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2," +
-    "zoompan=z='1.08':d=1:fps=30";
+    "scale=2200:1240:force_original_aspect_ratio=cover," +
+    "pad=2200:1240:(ow-iw)/2:(oh-ih)/2," +
+    `crop=1920:1080:x='(2200-1920)*(t/${duration})':y='(1240-1080)/2',` +
+    "fps=30";
 
   const args = [
     "-y",
